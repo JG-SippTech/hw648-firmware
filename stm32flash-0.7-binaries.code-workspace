@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "../stm32flash-0.7-binaries"
+		},
+		{
+			"name": "MotorDriver",
+			"path": "."
+		}
+	],
+	"settings": {}
+}

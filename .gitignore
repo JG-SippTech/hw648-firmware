@@ -1,0 +1,15 @@
+# PlatformIO
+.pio/
+.vscode/
+.clang_complete
+.gcc-flags.json
+
+# Build outputs
+*.bin
+*.elf
+*.hex
+*.map
+
+# OS files
+.DS_Store
+Thumbs.db
