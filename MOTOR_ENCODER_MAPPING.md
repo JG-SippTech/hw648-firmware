@@ -12,11 +12,11 @@
 | Motor # | I2C Shield | Motor Channel | Encoder Pins | Direction | QuadTimer | Status |
 |---------|------------|---------------|--------------|-----------|-----------|--------|
 | **Motor 1** | 0x2F | A | **0, 1** | ✅ Positive | QT3 | ✅ Working |
-| **Motor 2** | 0x2F | B | **3, 2** | ⚠️ Negative | QT1 | ✅ Working (swap to 2,3) |
+| **Motor 2** | 0x2F | B | **3, 2** | ✅ Positive | QT1 | ✅ Working (corrected) |
 | **Motor 3** | 0x30 | A | **6, 5** | ✅ Positive | QT2 | ✅ Working |
-| **Motor 4** | 0x30 | B | **10, 9** | ⚠️ Negative | QT4 | ✅ Working (swap to 9,10) |
+| **Motor 4** | 0x30 | B | **9, 10** | ✅ Positive | QT4 | ✅ Working (motor reversed) |
 | **Motor 5** | 0x2E | A | **11, 12** | ✅ Positive | QT4 | ✅ Working |
-| **Motor 6** | 0x2E | B | **8, 7** | ⚠️ Negative | QT3 | ✅ Working (swap to 7,8) |
+| **Motor 6** | 0x2E | B | **7, 8** | ✅ Positive | QT3 | ✅ Working (motor reversed) |
 
 ### Hardware Notes - November 16, 2025
 
@@ -40,10 +40,11 @@
 - Motor 6: Connected to pins 7-8 (planned for 11-12) - Uses QuadTimer 3
 - All 6 encoders functional with hardware QuadTimer support
 
-**Polarity Corrections Needed:**
-- Motor 2: Swap pins from (3,2) to (2,3) for positive counts
-- Motor 4: Swap pins from (10,9) to (9,10) for positive counts
-- Motor 6: Swap pins from (8,7) to (7,8) for positive counts
+**Polarity Corrections Applied (November 17, 2025):**
+- Motor 2: Encoder pins corrected to (3,2) ✅
+- Motor 4: Motor direction reversed (_CW↔_CCW), encoder pins (9,10) ✅
+- Motor 6: Motor direction reversed (_CW↔_CCW), encoder pins (7,8) ✅
+- All motors now show correct polarity (negative when moving backward)
 
 ---
 
@@ -65,7 +66,7 @@
 
 ## Code Implementation
 
-### 6-Motor Encoder Setup (Corrected Polarity):
+### 6-Motor Encoder Setup (Corrected Polarity - November 17, 2025):
 ```cpp
 #include <Encoder.h>
 #include "WEMOS_Motor.h"
@@ -74,20 +75,23 @@
 Motor Shield1_MotorA(0x2F, _MOTOR_A, 1000);  // Motor 1
 Motor Shield1_MotorB(0x2F, _MOTOR_B, 1000);  // Motor 2
 Motor Shield2_MotorA(0x30, _MOTOR_A, 1000);  // Motor 3
-Motor Shield2_MotorB(0x30, _MOTOR_B, 1000);  // Motor 4
+Motor Shield2_MotorB(0x30, _MOTOR_B, 1000);  // Motor 4 - Direction reversed in config
 Motor Shield3_MotorA(0x2E, _MOTOR_A, 1000);  // Motor 5
-Motor Shield3_MotorB(0x2E, _MOTOR_B, 1000);  // Motor 6
+Motor Shield3_MotorB(0x2E, _MOTOR_B, 1000);  // Motor 6 - Direction reversed in config
 
 // Encoder objects (with corrected polarity - all positive)
 Encoder encoder_01(0, 1);      // Motor 1 - Positive polarity
-Encoder encoder_23(2, 3);      // Motor 2 - SWAPPED for correct polarity
+Encoder encoder_32(3, 2);      // Motor 2 - SWAPPED for correct polarity
 Encoder encoder_65(6, 5);      // Motor 3 - Positive polarity
-Encoder encoder_910(9, 10);    // Motor 4 - SWAPPED for correct polarity
+Encoder encoder_910(9, 10);    // Motor 4 - Positive polarity (motor reversed)
 Encoder encoder_1112(11, 12);  // Motor 5 - Positive polarity
-Encoder encoder_78(7, 8);      // Motor 6 - SWAPPED for correct polarity
+Encoder encoder_78(7, 8);      // Motor 6 - Positive polarity (motor reversed)
 ```
 
-**Note:** Motors 2, 4, and 6 have encoder pins swapped to correct negative polarity. All motors now report positive counts when spinning clockwise.
+**Note:**
+- Motor 2: Encoder pins swapped to (3,2) for correct polarity
+- Motors 4 & 6: Motor direction reversed in config.h (_CW↔_CCW), encoder pins correct
+- All motors now show negative counts when moving backward, positive when moving forward
 
 ### 6-Motor Encoder Setup (As-Wired, Before Correction):
 ```cpp
@@ -305,6 +309,26 @@ pio run --target upload
 
 ## Firmware Change Log
 
+### November 17, 2025 - Crawler Selection & Direction Fixes ✅
+- ✅ **IMPLEMENTED CRAWLER SELECTION FEATURE:**
+  - New SELECT command (SELECT 1, SELECT 2, SELECT BOTH)
+  - Persistent crawler selection throughout session
+  - Movement commands (FORWARD, BACKWARD, STOP, ESTOP) respect selection
+  - Individual motor commands (M1-M6) always work regardless of selection
+  - Enhanced STATUS display shows current crawler selection
+  - Updated HELP command with new functionality
+- ✅ **FIXED ALL MOTOR DIRECTION AND ENCODER POLARITY ISSUES:**
+  - Motor 2 (Crawler 1): Corrected encoder polarity - pins swapped to (3,2)
+  - Motor 4 (Crawler 2): Reversed motor direction (_CW↔_CCW) - encoder pins (9,10)
+  - Motor 6 (Crawler 2): Reversed motor direction (_CW↔_CCW) - encoder pins (7,8)
+  - All 6 motors now move in correct direction with proper encoder feedback
+  - Verified: All motors show negative encoder counts when moving backward
+  - Position synchronization working perfectly (max error ~542 counts)
+- ✅ **TESTING COMPLETED:**
+  - Both crawlers tested independently using SELECT feature
+  - All motors confirmed moving in sync with correct polarity
+  - Ready for field deployment
+
 ### November 16, 2025 - Dual Crawler Control System COMPLETE ✅
 - ✅ Expanded system to 6 motors across 3 HW-648 shields
 - ✅ Added Shield 3 at I2C address 0x2E (AD1 soldered)
@@ -325,7 +349,6 @@ pio run --target upload
   - Enhanced STATUS command showing both crawlers
   - Individual motor control (M1-M6)
   - All existing PID/velocity control features maintained
-- ⚠️ Known issue: Potential motor direction issues on Crawler 2 (requires testing/adjustment)
 
 ### November 9, 2025
 - Initial 3-motor encoder identification test
