@@ -2,19 +2,38 @@
 #define CONFIG_H
 
 // ============================================================================
-// PIPE CRAWLER ROBOT - CONFIGURATION FILE
+// DUAL PIPE CRAWLER ROBOT - CONFIGURATION FILE
 // ============================================================================
 // All tunable parameters in one place for easy adjustment
-// Last updated: November 12, 2025
+// Supports 2 independent 3-wheeled crawlers operating in unison
+// Last updated: November 16, 2025
 // ============================================================================
 
 // ----------------------------------------------------------------------------
-// MOTOR CONFIGURATION
+// CRAWLER SYSTEM CONFIGURATION
+// ----------------------------------------------------------------------------
+
+// Number of crawlers supported
+#define NUM_CRAWLERS        2
+
+// Motors per crawler
+#define MOTORS_PER_CRAWLER  3
+
+// Total motors in system
+#define TOTAL_MOTORS        (NUM_CRAWLERS * MOTORS_PER_CRAWLER)  // 6 motors
+
+// Shield I2C addresses for detection
+#define SHIELD1_ADDR        0x2F  // Motors 1, 2
+#define SHIELD2_ADDR        0x30  // Motors 3, 4
+#define SHIELD3_ADDR        0x2E  // Motors 5, 6
+
+// ----------------------------------------------------------------------------
+// MOTOR CONFIGURATION - CRAWLER 1 (Motors 1, 2, 3)
 // ----------------------------------------------------------------------------
 
 // Motor I2C addresses (from MOTOR_ENCODER_MAPPING.md)
-#define MOTOR1_I2C_ADDR     0x2F  // Shield 1, Motor A (RED wire)
-#define MOTOR2_I2C_ADDR     0x2F  // Shield 1, Motor B (BLACK wire)
+#define MOTOR1_I2C_ADDR     0x2F  // Shield 1, Motor A
+#define MOTOR2_I2C_ADDR     0x2F  // Shield 1, Motor B
 #define MOTOR3_I2C_ADDR     0x30  // Shield 2, Motor A
 
 // Motor channels on shields
@@ -22,30 +41,66 @@
 #define MOTOR2_CHANNEL      _MOTOR_B
 #define MOTOR3_CHANNEL      _MOTOR_A
 
+// ----------------------------------------------------------------------------
+// MOTOR CONFIGURATION - CRAWLER 2 (Motors 4, 5, 6)
+// ----------------------------------------------------------------------------
+
+// Motor I2C addresses
+#define MOTOR4_I2C_ADDR     0x30  // Shield 2, Motor B
+#define MOTOR5_I2C_ADDR     0x2E  // Shield 3, Motor A
+#define MOTOR6_I2C_ADDR     0x2E  // Shield 3, Motor B
+
+// Motor channels on shields
+#define MOTOR4_CHANNEL      _MOTOR_B
+#define MOTOR5_CHANNEL      _MOTOR_A
+#define MOTOR6_CHANNEL      _MOTOR_B
+
+// ----------------------------------------------------------------------------
+// COMMON MOTOR PARAMETERS
+// ----------------------------------------------------------------------------
+
 // Motor PWM frequency (Hz)
 #define MOTOR_PWM_FREQ      1000
 
 // ----------------------------------------------------------------------------
-// ENCODER CONFIGURATION
+// ENCODER CONFIGURATION - CRAWLER 1 (Motors 1, 2, 3)
 // ----------------------------------------------------------------------------
 
 // Encoder pin assignments (hardware quadrature decoder pins)
-// Motor 2 and 3 pins are swapped to match motor direction reversals
+// Some pins are swapped to correct for negative polarity
 #define ENCODER1_PIN_A      0
 #define ENCODER1_PIN_B      1
 
-#define ENCODER2_PIN_A      3    // Swapped - motor direction reversed
-#define ENCODER2_PIN_B      2    // Swapped - motor direction reversed
+#define ENCODER2_PIN_A      3    // Swapped for correct polarity
+#define ENCODER2_PIN_B      2    // Swapped for correct polarity
 
-#define ENCODER3_PIN_A      6    // Swapped for correct polarity
-#define ENCODER3_PIN_B      5    // Swapped for correct polarity
+#define ENCODER3_PIN_A      6    // Positive polarity
+#define ENCODER3_PIN_B      5    // Positive polarity
+
+// ----------------------------------------------------------------------------
+// ENCODER CONFIGURATION - CRAWLER 2 (Motors 4, 5, 6)
+// ----------------------------------------------------------------------------
+
+// Encoder pin assignments (verified November 16, 2025)
+#define ENCODER4_PIN_A      9    // Correct polarity (with reversed motor direction)
+#define ENCODER4_PIN_B      10   // Correct polarity (with reversed motor direction)
+
+#define ENCODER5_PIN_A      11   // Positive polarity
+#define ENCODER5_PIN_B      12   // Positive polarity
+
+#define ENCODER6_PIN_A      7    // Correct polarity (with reversed motor direction)
+#define ENCODER6_PIN_B      8    // Correct polarity (with reversed motor direction)
+
+// ----------------------------------------------------------------------------
+// COMMON ENCODER PARAMETERS
+// ----------------------------------------------------------------------------
 
 // Encoder counts per revolution (depends on your encoders)
 // Adjust based on your specific encoder specs
 #define ENCODER_CPR         600  // Typical value, measure/adjust as needed
 
 // ----------------------------------------------------------------------------
-// PID CONTROLLER PARAMETERS
+// PID CONTROLLER PARAMETERS - CRAWLER 1 (Motors 1, 2, 3)
 // ----------------------------------------------------------------------------
 
 // PID gains for Motor 1 (start conservative, tune during testing)
@@ -63,6 +118,29 @@
 #define MOTOR3_KI           0.15f
 #define MOTOR3_KD           0.05f
 
+// ----------------------------------------------------------------------------
+// PID CONTROLLER PARAMETERS - CRAWLER 2 (Motors 4, 5, 6)
+// ----------------------------------------------------------------------------
+
+// PID gains for Motor 4 (start with same as Crawler 1)
+#define MOTOR4_KP           0.8f
+#define MOTOR4_KI           0.15f
+#define MOTOR4_KD           0.05f
+
+// PID gains for Motor 5
+#define MOTOR5_KP           0.8f
+#define MOTOR5_KI           0.15f
+#define MOTOR5_KD           0.05f
+
+// PID gains for Motor 6
+#define MOTOR6_KP           0.8f
+#define MOTOR6_KI           0.15f
+#define MOTOR6_KD           0.05f
+
+// ----------------------------------------------------------------------------
+// COMMON PID PARAMETERS
+// ----------------------------------------------------------------------------
+
 // PID output limits (PWM duty cycle: -100 to +100)
 // Sign indicates direction, magnitude is PWM percentage
 #define PID_OUTPUT_MIN      -100.0f
@@ -70,6 +148,26 @@
 
 // Anti-windup: Maximum integral accumulation
 #define PID_INTEGRAL_MAX    50.0f
+
+// ----------------------------------------------------------------------------
+// POSITION SYNCHRONIZATION
+// ----------------------------------------------------------------------------
+
+// Enable position-based synchronization to prevent robot tilt in pipe
+// Keeps all three motors at the same encoder position during movement
+#define ENABLE_POSITION_SYNC    true
+
+// Position synchronization gain (proportional control)
+// Higher values = stronger correction, but may cause oscillation
+// Start conservative and increase if drift persists
+#define POSITION_SYNC_KP        0.2f
+
+// Maximum position error before warning (encoder counts)
+#define MAX_POSITION_ERROR      500
+
+// Maximum velocity correction allowed (counts/sec)
+// Limits how much sync can adjust individual motor speeds
+#define MAX_SYNC_CORRECTION     800.0f
 
 // ----------------------------------------------------------------------------
 // SPEED AND MOTION PARAMETERS
@@ -134,7 +232,7 @@
 #define CMD_BUFFER_SIZE     64
 
 // ----------------------------------------------------------------------------
-// MOTOR DIRECTION MAPPINGS
+// MOTOR DIRECTION MAPPINGS - CRAWLER 1 (Motors 1, 2, 3)
 // ----------------------------------------------------------------------------
 
 // Define forward direction for each motor
@@ -147,6 +245,20 @@
 
 #define MOTOR3_FWD_DIR      _CW
 #define MOTOR3_BACK_DIR     _CCW
+
+// ----------------------------------------------------------------------------
+// MOTOR DIRECTION MAPPINGS - CRAWLER 2 (Motors 4, 5, 6)
+// ----------------------------------------------------------------------------
+
+// Motor 4-6 directions (match encoder polarity corrections)
+#define MOTOR4_FWD_DIR      _CCW    // Reversed: Motor wired backward
+#define MOTOR4_BACK_DIR     _CW
+
+#define MOTOR5_FWD_DIR      _CW     // Correct direction
+#define MOTOR5_BACK_DIR     _CCW
+
+#define MOTOR6_FWD_DIR      _CCW    // Reversed: Motor wired backward
+#define MOTOR6_BACK_DIR     _CW
 
 // ----------------------------------------------------------------------------
 // DEBUG AND LOGGING

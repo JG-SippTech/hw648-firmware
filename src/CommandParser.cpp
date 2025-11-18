@@ -19,9 +19,9 @@ void CommandParser::begin() {
         // Wait for serial connection (max 3 seconds)
     }
 
-    Serial.println("\n=================================");
-    Serial.println("  PIPE CRAWLER ROBOT CONTROLLER");
-    Serial.println("=================================");
+    Serial.println("\n====================================");
+    Serial.println("  DUAL CRAWLER ROBOT CONTROLLER");
+    Serial.println("====================================");
     Serial.println("Type HELP for available commands\n");
 
     m_lastCommandTime = millis();
@@ -112,8 +112,8 @@ void CommandParser::parseCommand(const char* command) {
         m_robot->emergencyStop();
         Serial.println("OK - EMERGENCY STOP");
     }
-    else if (cmd[0] == 'M' && (cmd[1] >= '1' && cmd[1] <= '3')) {
-        // Individual motor control: M1 FWD 50
+    else if (cmd[0] == 'M' && (cmd[1] >= '1' && cmd[1] <= '6')) {
+        // Individual motor control: M1 FWD 50, M2 BACK 30, etc.
         int motorId = cmd[1] - '0';
         char* dirStr = cmd + 3;
 
@@ -159,6 +159,42 @@ void CommandParser::parseCommand(const char* command) {
         m_robot->resetEncoders();
         Serial.println("OK - Encoders reset");
     }
+    else if (strncmp(cmd, "SELECT", 6) == 0) {
+        // Parse crawler selection: SELECT 1, SELECT 2, SELECT BOTH
+        char* arg = cmd + 6;
+        while (*arg == ' ') arg++;  // Skip whitespace
+
+        CrawlerSelection selection;
+        bool valid = false;
+
+        if (strcmp(arg, "1") == 0) {
+            selection = SELECT_CRAWLER_1;
+            valid = true;
+        } else if (strcmp(arg, "2") == 0) {
+            selection = SELECT_CRAWLER_2;
+            valid = true;
+        } else if (strcmp(arg, "BOTH") == 0 || strcmp(arg, "ALL") == 0) {
+            selection = SELECT_BOTH;
+            valid = true;
+        }
+
+        if (valid) {
+            if (m_robot->selectCrawler(selection)) {
+                Serial.print("OK - Selected ");
+                if (selection == SELECT_CRAWLER_1) {
+                    Serial.println("Crawler 1 (motors 1-3)");
+                } else if (selection == SELECT_CRAWLER_2) {
+                    Serial.println("Crawler 2 (motors 4-6)");
+                } else {
+                    Serial.println("BOTH crawlers");
+                }
+            } else {
+                Serial.println("ERROR - Selected crawler not available");
+            }
+        } else {
+            Serial.println("ERROR - Invalid selection. Use: SELECT 1, SELECT 2, or SELECT BOTH");
+        }
+    }
     else if (strcmp(cmd, "HELP") == 0) {
         printHelp();
     }
@@ -170,41 +206,78 @@ void CommandParser::parseCommand(const char* command) {
 }
 
 void CommandParser::printStatus() {
-    Serial.println("\n--- ROBOT STATUS ---");
+    Serial.println("\n--- DUAL CRAWLER STATUS ---");
 
-    // Get motor controllers
-    MotorController* m1 = m_robot->getMotor(1);
-    MotorController* m2 = m_robot->getMotor(2);
-    MotorController* m3 = m_robot->getMotor(3);
+    // Show current selection
+    Serial.print("Selected: ");
+    CrawlerSelection selection = m_robot->getCrawlerSelection();
+    if (selection == SELECT_CRAWLER_1) {
+        Serial.println("Crawler 1 only");
+    } else if (selection == SELECT_CRAWLER_2) {
+        Serial.println("Crawler 2 only");
+    } else {
+        Serial.println("BOTH crawlers");
+    }
 
     Serial.print("Speed: ");
     Serial.print(m_robot->getCurrentSpeed(), 1);
-    Serial.print("% (target: ");
+    Serial.print("% (Target: ");
     Serial.print(m_robot->getTargetSpeed(), 1);
     Serial.println("%)");
 
-    Serial.print("Motor 1 - Pos: ");
-    Serial.print(m1->getPosition());
-    Serial.print("  Vel: ");
-    Serial.print(m1->getVelocity(), 1);
-    Serial.print("  PWM: ");
-    Serial.println(m1->getPWM(), 1);
+    // Show Crawler 1 status
+    if (m_robot->isCrawler1Active()) {
+        Serial.println("\nCRAWLER 1 (Motors 1-3):");
 
-    Serial.print("Motor 2 - Pos: ");
-    Serial.print(m2->getPosition());
-    Serial.print("  Vel: ");
-    Serial.print(m2->getVelocity(), 1);
-    Serial.print("  PWM: ");
-    Serial.println(m2->getPWM(), 1);
+        for (int i = 1; i <= 3; i++) {
+            MotorController* motor = m_robot->getMotor(i);
+            if (motor) {
+                Serial.print("  Motor ");
+                Serial.print(i);
+                Serial.print(" - Pos: ");
+                Serial.print(motor->getPosition());
+                Serial.print("  Vel: ");
+                Serial.print(motor->getVelocity(), 1);
+                Serial.print(" c/s  PWM: ");
+                Serial.print(motor->getPWM(), 1);
+                Serial.println("%");
+            }
+        }
+    }
 
-    Serial.print("Motor 3 - Pos: ");
-    Serial.print(m3->getPosition());
-    Serial.print("  Vel: ");
-    Serial.print(m3->getVelocity(), 1);
-    Serial.print("  PWM: ");
-    Serial.println(m3->getPWM(), 1);
+    // Show Crawler 2 status
+    if (m_robot->isCrawler2Active()) {
+        Serial.println("\nCRAWLER 2 (Motors 4-6):");
 
-    Serial.println("--------------------\n");
+        for (int i = 4; i <= 6; i++) {
+            MotorController* motor = m_robot->getMotor(i);
+            if (motor) {
+                Serial.print("  Motor ");
+                Serial.print(i);
+                Serial.print(" - Pos: ");
+                Serial.print(motor->getPosition());
+                Serial.print("  Vel: ");
+                Serial.print(motor->getVelocity(), 1);
+                Serial.print(" c/s  PWM: ");
+                Serial.print(motor->getPWM(), 1);
+                Serial.println("%");
+            }
+        }
+    }
+
+    // Position synchronization status
+    Serial.print("\nSync - Avg Pos: ");
+    Serial.print(m_robot->getAveragePosition(), 0);
+    Serial.print("  Max Error: ");
+    Serial.print(m_robot->getMaxPositionError(), 0);
+    Serial.println(" counts");
+
+    // Active crawler count
+    Serial.print("Active Crawlers: ");
+    Serial.print(m_robot->getActiveCrawlers());
+    Serial.println("/2");
+
+    Serial.println("---------------------------\n");
 }
 
 void CommandParser::resetWatchdog() {
@@ -216,17 +289,22 @@ bool CommandParser::isWatchdogTimeout() {
 }
 
 void CommandParser::printHelp() {
-    Serial.println("\n===== AVAILABLE COMMANDS =====");
-    Serial.println("FORWARD <speed>     - Move forward (speed: 0-100)");
-    Serial.println("BACKWARD <speed>    - Move backward (speed: 0-100)");
-    Serial.println("STOP                - Stop all motors (with ramping)");
-    Serial.println("ESTOP               - Emergency stop (immediate)");
-    Serial.println("M<id> <dir> <speed> - Control motor (id:1-3, dir:FWD/BACK)");
-    Serial.println("                      Example: M1 FWD 50");
-    Serial.println("STATUS              - Print robot status");
+    Serial.println("\n===== DUAL CRAWLER COMMANDS =====");
+    Serial.println("SELECT 1            - Control only Crawler 1 (motors 1-3)");
+    Serial.println("SELECT 2            - Control only Crawler 2 (motors 4-6)");
+    Serial.println("SELECT BOTH         - Control both crawlers (default)");
+    Serial.println("FORWARD <speed>     - Move selected crawler(s) forward (0-100)");
+    Serial.println("BACKWARD <speed>    - Move selected crawler(s) backward (0-100)");
+    Serial.println("STOP                - Stop selected crawler(s) (with ramping)");
+    Serial.println("ESTOP               - Emergency stop selected crawler(s)");
+    Serial.println("M<id> <dir> <speed> - Control individual motor (id:1-6)");
+    Serial.println("                      Crawler 1: Motors 1-3");
+    Serial.println("                      Crawler 2: Motors 4-6");
+    Serial.println("                      Example: M1 FWD 50, M5 BACK 30");
+    Serial.println("STATUS              - Print detailed crawler status");
     Serial.println("RESET               - Reset encoder positions");
     Serial.println("HELP                - Show this message");
-    Serial.println("==============================\n");
+    Serial.println("==================================\n");
 }
 
 float CommandParser::parseFloat(const char* str) {
