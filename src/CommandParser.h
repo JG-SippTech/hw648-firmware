@@ -77,6 +77,12 @@ private:
     unsigned long m_lastCommandTime; // Timestamp of last command (ms)
     unsigned long m_lastStatusTime;  // Timestamp of last status print (ms)
 
+    // NUDGE command state
+    bool m_nudgeActive;              // True if NUDGE is in progress
+    int m_nudgeMotorId;              // Which motor is being nudged (1-6)
+    long m_nudgeTargetPosition;      // Target encoder position for NUDGE
+    unsigned long m_nudgeStartTime;  // When NUDGE started (for timeout)
+
     /**
      * @brief Parse and execute a complete command
      *

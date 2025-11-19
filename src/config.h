@@ -170,6 +170,53 @@
 #define MAX_SYNC_CORRECTION     800.0f
 
 // ----------------------------------------------------------------------------
+// SLIP DETECTION
+// ----------------------------------------------------------------------------
+
+// Enable slip detection to catch wheel traction loss
+// Monitors velocity tracking error (target vs actual velocity)
+#define ENABLE_SLIP_DETECTION   true
+
+// Velocity error threshold for slip detection (as fraction of target)
+// 0.35 = 35% error threshold
+// Higher values = less sensitive (fewer false positives)
+// Lower values = more sensitive (may trigger on normal PID settling)
+#define SLIP_ERROR_THRESHOLD    0.35f
+
+// Minimum time slip must persist before triggering (milliseconds)
+// Prevents false positives from momentary velocity fluctuations
+#define SLIP_DETECTION_TIME_MS  500
+
+// Slip detection actions (choose one)
+#define SLIP_ACTION_NONE    0   // Disabled
+#define SLIP_ACTION_WARN    1   // Print warning only
+#define SLIP_ACTION_STOP    2   // Emergency stop crawler
+#define SLIP_ACTION_REDUCE  3   // Reduce speed by 30%
+
+// Active slip response
+#define SLIP_ACTION             SLIP_ACTION_WARN
+
+// ----------------------------------------------------------------------------
+// NUDGE COMMAND
+// ----------------------------------------------------------------------------
+
+// Enable NUDGE command for fine motor positioning
+// Usage: NUDGE M<id> <+/- counts>
+#define ENABLE_NUDGE_COMMAND    true
+
+// Speed for NUDGE movements (percentage)
+// Lower = more precise, higher = faster alignment
+#define NUDGE_SPEED_PERCENT     20
+
+// Maximum NUDGE distance (encoder counts)
+// Prevents accidental large movements
+#define NUDGE_MAX_DISTANCE      1000
+
+// NUDGE command timeout (milliseconds)
+// Auto-cancel if position not reached within this time
+#define NUDGE_TIMEOUT_MS        10000
+
+// ----------------------------------------------------------------------------
 // SPEED AND MOTION PARAMETERS
 // ----------------------------------------------------------------------------
 

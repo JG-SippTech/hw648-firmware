@@ -105,6 +105,33 @@ public:
      */
     float getError() const { return m_pid->getError(); }
 
+    /**
+     * @brief Check for wheel slip (traction loss)
+     *
+     * Monitors velocity tracking error. If actual velocity significantly
+     * differs from target for sustained period, indicates slip.
+     *
+     * @return int Slip indicator:
+     *         0 = No slip (normal operation)
+     *         1 = Warning (potential slip starting)
+     *         2 = Critical slip detected (likely traction loss)
+     */
+    int detectSlip();
+
+    /**
+     * @brief Get current slip indicator
+     *
+     * @return int Slip status (0=none, 1=warning, 2=critical)
+     */
+    int getSlipIndicator() const { return m_slipIndicator; }
+
+    /**
+     * @brief Reset slip detection state
+     *
+     * Clears slip timer and indicator. Call after handling slip condition.
+     */
+    void resetSlipDetection();
+
 private:
     Motor* m_motor;               // WEMOS Motor object
     Encoder* m_encoder;           // Quadrature encoder
@@ -119,6 +146,11 @@ private:
 
     long m_previousPosition;     // Last encoder reading
     unsigned long m_previousTime; // Last update timestamp (microseconds)
+
+    // Slip detection state
+    int m_slipIndicator;         // Current slip status (0=none, 1=warn, 2=critical)
+    unsigned long m_slipStartTime; // When slip condition first detected (millis)
+    bool m_slipTimerActive;      // True if slip condition is ongoing
 
     /**
      * @brief Calculate current velocity from encoder

@@ -1,4 +1,5 @@
 #include "MotorController.h"
+#include "config.h"
 
 MotorController::MotorController(Motor* motor, Encoder* encoder, PIDController* pid,
                                  uint8_t fwdDir, uint8_t backDir)
@@ -12,6 +13,9 @@ MotorController::MotorController(Motor* motor, Encoder* encoder, PIDController* 
     , m_currentPWM(0.0f)
     , m_previousPosition(0)
     , m_previousTime(0)
+    , m_slipIndicator(0)
+    , m_slipStartTime(0)
+    , m_slipTimerActive(false)
 {
 }
 
@@ -117,4 +121,60 @@ void MotorController::applyMotorCommand(float pwm, float velocity) {
         // Zero velocity target - stop
         m_motor->setmotor(_STOP);
     }
+}
+
+int MotorController::detectSlip() {
+    #if ENABLE_SLIP_DETECTION
+
+    // Don't detect slip if motor is stopped or very slow
+    // (Velocity tracking is poor at low speeds due to discretization)
+    if (fabs(m_targetVelocity) < 50.0f) {
+        resetSlipDetection();
+        return 0;
+    }
+
+    // Calculate velocity tracking error (absolute and percentage)
+    float velocityError = fabs(m_targetVelocity - m_currentVelocity);
+    float errorPercent = velocityError / fabs(m_targetVelocity);
+
+    // Check if error exceeds threshold
+    bool slipCondition = (errorPercent > SLIP_ERROR_THRESHOLD);
+
+    if (slipCondition) {
+        // Slip condition detected
+        if (!m_slipTimerActive) {
+            // First detection - start timer
+            m_slipStartTime = millis();
+            m_slipTimerActive = true;
+            m_slipIndicator = 0;  // Not yet confirmed
+        } else {
+            // Slip condition ongoing - check duration
+            unsigned long slipDuration = millis() - m_slipStartTime;
+
+            if (slipDuration >= SLIP_DETECTION_TIME_MS) {
+                // Slip persisted long enough - set indicator
+                if (errorPercent > 0.50f) {
+                    m_slipIndicator = 2;  // Critical slip (>50% error)
+                } else {
+                    m_slipIndicator = 1;  // Warning (35-50% error)
+                }
+            }
+        }
+    } else {
+        // No slip condition - reset timer
+        resetSlipDetection();
+    }
+
+    return m_slipIndicator;
+
+    #else
+    // Slip detection disabled
+    return 0;
+    #endif
+}
+
+void MotorController::resetSlipDetection() {
+    m_slipIndicator = 0;
+    m_slipTimerActive = false;
+    m_slipStartTime = 0;
 }

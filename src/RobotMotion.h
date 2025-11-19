@@ -201,6 +201,17 @@ public:
      */
     float getAveragePosition() const { return m_averagePosition; }
 
+    /**
+     * @brief Check all motors for slip and handle if detected
+     *
+     * Calls detectSlip() on each motor and takes action based on SLIP_ACTION.
+     * Actions: WARN (print message), STOP (emergency stop), REDUCE (slow down 30%)
+     *
+     * @return true If slip was detected on any motor
+     * @return false If no slip detected
+     */
+    bool checkForSlip();
+
 private:
     // Motor controllers (Crawler 1: motors 1-3, Crawler 2: motors 4-6)
     MotorController* m_motor1;

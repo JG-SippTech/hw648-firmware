@@ -237,6 +237,11 @@ void RobotMotion::update(float dt) {
         if (m_motor5) m_motor5->update(dt);
         if (m_motor6) m_motor6->update(dt);
     }
+
+    // Check for slip on all motors (only when moving)
+    if (fabs(baseVelocity) > 10.0f) {
+        checkForSlip();
+    }
 }
 
 bool RobotMotion::isMoving() const {
@@ -374,5 +379,81 @@ void RobotMotion::calculatePositionCorrections(float& correction1, float& correc
     m_averagePosition = 0.0f;
     m_maxPositionError = 0.0f;
 
+    #endif
+}
+
+bool RobotMotion::checkForSlip() {
+    #if ENABLE_SLIP_DETECTION
+
+    bool slipDetected = false;
+    int motorId = 0;
+    int maxSlipLevel = 0;
+
+    // Check all active motors for slip
+    MotorController* motors[] = {m_motor1, m_motor2, m_motor3, m_motor4, m_motor5, m_motor6};
+
+    for (int i = 0; i < 6; i++) {
+        MotorController* motor = motors[i];
+
+        // Skip inactive motors
+        if (motor == nullptr) continue;
+        if (i >= 3 && !m_crawler2Active) continue;  // Motors 4-6 only if crawler 2 active
+
+        // Detect slip on this motor
+        int slipLevel = motor->detectSlip();
+
+        if (slipLevel > 0) {
+            slipDetected = true;
+            if (slipLevel > maxSlipLevel) {
+                maxSlipLevel = slipLevel;
+                motorId = i + 1;  // Motor IDs are 1-indexed
+            }
+        }
+    }
+
+    // Take action if slip detected
+    if (slipDetected && maxSlipLevel > 0) {
+        #if SLIP_ACTION == SLIP_ACTION_WARN
+        // Print warning
+        Serial.print("[SLIP] Motor ");
+        Serial.print(motorId);
+        if (maxSlipLevel == 1) {
+            Serial.println(": Warning - possible slip starting");
+        } else {
+            Serial.println(": CRITICAL - severe slip detected!");
+        }
+
+        #elif SLIP_ACTION == SLIP_ACTION_STOP
+        // Emergency stop
+        Serial.print("[SLIP] Motor ");
+        Serial.print(motorId);
+        Serial.println(" slipping - EMERGENCY STOP");
+        emergencyStop();
+
+        #elif SLIP_ACTION == SLIP_ACTION_REDUCE
+        // Reduce speed
+        if (maxSlipLevel >= 2) {  // Only on critical slip
+            Serial.print("[SLIP] Motor ");
+            Serial.print(motorId);
+            Serial.println(" slipping - reducing speed");
+
+            // Reduce target speed by 30%
+            m_targetSpeedPercent *= 0.7f;
+            float targetVelocity = speedToVelocity(m_targetSpeedPercent);
+            m_ramp->setTarget(targetVelocity);
+
+            // Reset slip detection so it doesn't keep triggering
+            for (int i = 0; i < 6; i++) {
+                if (motors[i]) motors[i]->resetSlipDetection();
+            }
+        }
+        #endif
+    }
+
+    return slipDetected;
+
+    #else
+    // Slip detection disabled
+    return false;
     #endif
 }

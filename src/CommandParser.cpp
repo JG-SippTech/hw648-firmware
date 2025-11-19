@@ -9,6 +9,10 @@ CommandParser::CommandParser(RobotMotion* robot, unsigned long baudRate)
     , m_cmdIndex(0)
     , m_lastCommandTime(0)
     , m_lastStatusTime(0)
+    , m_nudgeActive(false)
+    , m_nudgeMotorId(0)
+    , m_nudgeTargetPosition(0)
+    , m_nudgeStartTime(0)
 {
     memset(m_cmdBuffer, 0, sizeof(m_cmdBuffer));
 }
@@ -63,10 +67,46 @@ void CommandParser::update() {
     }
     #endif
 
+    // Update NUDGE command execution
+    #if ENABLE_NUDGE_COMMAND
+    if (m_nudgeActive) {
+        MotorController* motor = m_robot->getMotor(m_nudgeMotorId);
+        if (motor) {
+            long currentPos = motor->getPosition();
+            long targetPos = m_nudgeTargetPosition;
+            long error = targetPos - currentPos;
+
+            // Check if target reached (within 10 counts tolerance)
+            if (abs(error) < 10) {
+                // Target reached - stop motor
+                motor->setVelocity(0.0f);
+                m_nudgeActive = false;
+                Serial.print("NUDGE complete - Motor ");
+                Serial.print(m_nudgeMotorId);
+                Serial.print(" at position ");
+                Serial.println(currentPos);
+            }
+            // Check for timeout
+            else if (millis() - m_nudgeStartTime > NUDGE_TIMEOUT_MS) {
+                // Timeout - stop motor
+                motor->setVelocity(0.0f);
+                m_nudgeActive = false;
+                Serial.println("[NUDGE] Timeout - stopping motor");
+            }
+            // Continue nudging
+            // (Velocity is already set, just let it run)
+        } else {
+            // Motor not available - cancel NUDGE
+            m_nudgeActive = false;
+        }
+    }
+    #endif
+
     // Check watchdog timeout
     if (ENABLE_WATCHDOG && isWatchdogTimeout()) {
         Serial.println("\n[WATCHDOG] Command timeout - stopping robot");
         m_robot->emergencyStop();
+        m_nudgeActive = false;  // Cancel any active NUDGE
         resetWatchdog();
     }
 }
@@ -159,6 +199,71 @@ void CommandParser::parseCommand(const char* command) {
         m_robot->resetEncoders();
         Serial.println("OK - Encoders reset");
     }
+    #if ENABLE_NUDGE_COMMAND
+    else if (strncmp(cmd, "NUDGE", 5) == 0) {
+        // NUDGE command: NUDGE M<id> <+/- counts>
+        // Example: NUDGE M2 +50, NUDGE M5 -30
+        char* arg = cmd + 5;
+        while (*arg == ' ') arg++;  // Skip whitespace
+
+        // Parse motor ID
+        if (*arg == 'M' && (arg[1] >= '1' && arg[1] <= '6')) {
+            int motorId = arg[1] - '0';
+            arg += 2;  // Skip 'M' and digit
+            while (*arg == ' ') arg++;  // Skip whitespace
+
+            // Parse offset (can be positive or negative)
+            int offset = parseInt(arg);
+
+            // Validate offset
+            if (abs(offset) > NUDGE_MAX_DISTANCE) {
+                Serial.print("ERROR - NUDGE distance limited to +/-");
+                Serial.println(NUDGE_MAX_DISTANCE);
+                return;
+            }
+
+            // Get motor controller
+            MotorController* motor = m_robot->getMotor(motorId);
+            if (!motor) {
+                Serial.println("ERROR - Invalid motor ID");
+                return;
+            }
+
+            // Cancel any previous NUDGE
+            if (m_nudgeActive) {
+                MotorController* prevMotor = m_robot->getMotor(m_nudgeMotorId);
+                if (prevMotor) prevMotor->setVelocity(0.0f);
+            }
+
+            // Set target position
+            long currentPos = motor->getPosition();
+            m_nudgeTargetPosition = currentPos + offset;
+            m_nudgeMotorId = motorId;
+            m_nudgeStartTime = millis();
+            m_nudgeActive = true;
+
+            // Set motor velocity (low speed for precision)
+            float nudgeSpeed = NUDGE_SPEED_PERCENT;
+            if (offset < 0) {
+                nudgeSpeed = -nudgeSpeed;  // Negative for backward
+            }
+            float nudgeVelocity = (nudgeSpeed / 100.0f) * MAX_VELOCITY_CPS;
+            motor->setVelocity(nudgeVelocity);
+
+            Serial.print("NUDGE started - Motor ");
+            Serial.print(motorId);
+            Serial.print(" moving ");
+            Serial.print(offset);
+            Serial.print(" counts (");
+            Serial.print(currentPos);
+            Serial.print(" → ");
+            Serial.print(m_nudgeTargetPosition);
+            Serial.println(")");
+        } else {
+            Serial.println("ERROR - Invalid NUDGE syntax. Use: NUDGE M<id> <+/- counts>");
+        }
+    }
+    #endif
     else if (strncmp(cmd, "SELECT", 6) == 0) {
         // Parse crawler selection: SELECT 1, SELECT 2, SELECT BOTH
         char* arg = cmd + 6;
@@ -301,6 +406,10 @@ void CommandParser::printHelp() {
     Serial.println("                      Crawler 1: Motors 1-3");
     Serial.println("                      Crawler 2: Motors 4-6");
     Serial.println("                      Example: M1 FWD 50, M5 BACK 30");
+    #if ENABLE_NUDGE_COMMAND
+    Serial.println("NUDGE M<id> <count> - Move motor by exact encoder counts");
+    Serial.println("                      Example: NUDGE M2 +50, NUDGE M5 -30");
+    #endif
     Serial.println("STATUS              - Print detailed crawler status");
     Serial.println("RESET               - Reset encoder positions");
     Serial.println("HELP                - Show this message");
