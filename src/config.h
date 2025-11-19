@@ -186,7 +186,7 @@
 #define MAX_VELOCITY_CPS    4500.0f  // Max encoder counts per second at 100% speed
 
 // Acceleration ramping
-#define RAMP_TIME_MS        1500    // Time to ramp from 0 to 100% (milliseconds)
+#define RAMP_TIME_MS        2500    // Time to ramp from 0 to 100% (milliseconds)
 #define RAMP_STEP_MS        20      // Time between ramp steps (matches control loop)
 
 // Calculate ramp increment per step
@@ -209,7 +209,7 @@
 // ----------------------------------------------------------------------------
 
 // Watchdog timeout (auto-stop if no command received)
-#define WATCHDOG_TIMEOUT_MS 8000    // 2 seconds
+#define WATCHDOG_TIMEOUT_MS 4000    // 2 seconds
 
 // Emergency stop conditions
 #define ENABLE_WATCHDOG     true
@@ -267,11 +267,8 @@
 // Enable debug output (set to false for production)
 #define DEBUG_ENABLED       true
 
-// Debug output flags
-#define DEBUG_PID           false   // Print PID calculations
-#define DEBUG_VELOCITY      false   // Print velocity measurements
-#define DEBUG_COMMANDS      true    // Print received commands
-#define DEBUG_MOTORS        false   // Print motor setpoints
+// Print received commands to serial
+#define DEBUG_COMMANDS      true
 
 // ----------------------------------------------------------------------------
 // ROS2 PREPARATION
