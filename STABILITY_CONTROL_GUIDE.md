@@ -393,41 +393,49 @@ User Command → Speed Ramp → Base Velocity
 
 **Purpose:** Manual control of individual motors for realignment
 
-**Key Mapping (Two-Key Design):**
+Controls one crawler at a time (select at launch) with 3 motors per session.
+
+**Key Mapping:**
 
 ```
-Motor 1:  Q = Forward    A = Backward
-Motor 2:  W = Forward    S = Backward
-Motor 3:  E = Forward    D = Backward
-Motor 4:  R = Forward    F = Backward
-Motor 5:  T = Forward    G = Backward
-Motor 6:  Y = Forward    H = Backward
+Q = Motor Forward     A = Motor Backward   (Motor 1 or 4)
+W = Motor Forward     S = Motor Backward   (Motor 2 or 5)
+E = Motor Forward     D = Motor Backward   (Motor 3 or 6)
 
-ESC = Emergency Stop All Motors
+SPACE = Stop All Motors
+ESC = Emergency Stop & Exit
 ```
 
-**Why two-key design?**
+**Why single-crawler design?**
 - Avoids Windows keyboard ghosting (6+ simultaneous keys)
-- Standard keyboards support 2-6 keys, not 6+ simultaneously
-- More intuitive than memorizing complex key combos
+- Only 3 motors to control = simpler key mapping
+- Can switch between crawlers by restarting with different argument
+
+**Requirements:**
+```bash
+pip install pyserial keyboard
+```
 
 **Usage:**
 
 ```bash
-# From hw648-firmware/ directory
-python tools/manual_control.py
+# Control Crawler 1 (motors 1-3)
+python tools/manual_control.py COM8 1
 
-# Follow prompts:
-# 1. Enter COM port (e.g., COM7)
-# 2. Press keys to control motors
-# 3. ESC to exit
+# Control Crawler 2 (motors 4-6)
+python tools/manual_control.py COM8 2
 ```
 
+**Important Notes:**
+- Requires admin privileges on Windows (for keyboard library)
+- Close PIO device monitor before running (only one program can use COM port)
+- Hold key to move motor, release to stop
+
 **Features:**
-- Real-time status display
-- Shows which motors are running
-- Displays current encoder positions
-- Emergency stop on ESC key
+- Real-time status display showing motor states
+- Hold-to-move, release-to-stop control
+- SPACE key stops all motors without exiting
+- ESC for emergency stop and exit
 
 ### NUDGE Command (Built into Firmware)
 
