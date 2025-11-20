@@ -308,6 +308,49 @@
 #define MOTOR6_BACK_DIR     _CW
 
 // ----------------------------------------------------------------------------
+// IMU CONFIGURATION (LSM9DS1)
+// ----------------------------------------------------------------------------
+
+// Enable IMU for attitude sensing
+#define ENABLE_IMU              true
+
+// IMU I2C bus (Wire1 = pins 16/17, separate from motor shields on Wire)
+// This keeps the long IMU cable isolated from motor shield communication
+#define IMU_WIRE                Wire1
+
+// IMU update rate (Hz) - how often to read IMU data
+// Keep lower than control loop to avoid I2C bus congestion
+#define IMU_UPDATE_HZ           20
+
+// Complementary filter coefficient for pitch/roll calculation
+// Higher = more gyro (smoother but drifts), Lower = more accel (noisier but no drift)
+#define IMU_FILTER_ALPHA        0.98f
+
+// Pitch/roll warning thresholds (degrees)
+#define PITCH_WARNING_DEG       5.0f    // Warn if pitch > 5 degrees
+#define ROLL_WARNING_DEG        5.0f    // Warn if roll > 5 degrees
+
+// ----------------------------------------------------------------------------
+// TILT CORRECTION (IMU-based stability control)
+// ----------------------------------------------------------------------------
+
+// Enable tilt correction system
+// When enabled, monitors pitch deviation from calibrated baseline
+#define ENABLE_TILT_CORRECTION  true
+
+// Automatically calibrate IMU baseline on startup
+// Set false to require manual CALIBRATE command
+#define AUTO_CALIBRATE_ON_START true
+
+// Tilt warning threshold (degrees from baseline)
+// Print warning when tilt exceeds this value
+#define TILT_WARNING_THRESHOLD  2.0f
+
+// Future: Active tilt correction gain
+// Multiplier for position sync when tilt detected
+// #define TILT_CORRECTION_GAIN    0.5f
+
+// ----------------------------------------------------------------------------
 // DEBUG AND LOGGING
 // ----------------------------------------------------------------------------
 

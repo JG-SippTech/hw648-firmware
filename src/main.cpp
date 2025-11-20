@@ -27,6 +27,12 @@
 
 // Project includes
 #include "config.h"
+
+// IMU support (after config.h for ENABLE_IMU)
+#if ENABLE_IMU
+#include <Adafruit_LSM9DS1.h>
+#include <Adafruit_Sensor.h>
+#endif
 #include "PIDController.h"
 #include "SpeedRamp.h"
 #include "MotorController.h"
@@ -107,6 +113,154 @@ RobotMotion robot(&motorCtrl1, &motorCtrl2, &motorCtrl3,
 
 // Command parser for serial interface
 CommandParser cmdParser(&robot, SERIAL_BAUD);
+
+// ============================================================================
+// IMU (LSM9DS1 on Wire1)
+// ============================================================================
+
+#if ENABLE_IMU
+// IMU object on Wire1 (pins 16/17) - separate from motor shields
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1(&IMU_WIRE);
+
+// IMU state
+bool imuAvailable = false;
+float currentPitch = 0.0f;    // Pitch angle in degrees (nose up/down)
+float currentRoll = 0.0f;     // Roll angle in degrees (tilt left/right)
+unsigned long lastImuUpdate = 0;
+const unsigned long imuPeriodMs = 1000 / IMU_UPDATE_HZ;
+
+// Tilt correction state
+bool imuCalibrated = false;
+float baselinePitch = 0.0f;   // Calibrated "level" pitch
+unsigned long lastTiltWarning = 0;
+const unsigned long tiltWarningInterval = 2000;  // Warn every 2 seconds max
+
+/**
+ * @brief Initialize IMU on Wire1
+ * @return true if IMU found and configured
+ */
+bool initIMU() {
+    // Initialize Wire1 for IMU
+    IMU_WIRE.begin();
+    IMU_WIRE.setClock(400000);  // 400 kHz I2C for IMU
+
+    Serial.print("Initializing IMU on Wire1... ");
+
+    if (!lsm.begin()) {
+        Serial.println("NOT FOUND");
+        return false;
+    }
+
+    // Configure sensor ranges
+    lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
+    lsm.setupMag(lsm.LSM9DS1_MAGGAIN_4GAUSS);
+    lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_245DPS);
+
+    Serial.println("OK");
+    return true;
+}
+
+/**
+ * @brief Read IMU and calculate pitch/roll
+ */
+void updateIMU() {
+    if (!imuAvailable) return;
+
+    // Read all sensors
+    lsm.read();
+
+    // Get sensor events
+    sensors_event_t accel, mag, gyro, temp;
+    lsm.getEvent(&accel, &mag, &gyro, &temp);
+
+    // Calculate pitch and roll from accelerometer
+    // Assuming IMU is mounted with X forward, Y left, Z up
+    float accelPitch = atan2(-accel.acceleration.x,
+                             sqrt(accel.acceleration.y * accel.acceleration.y +
+                                  accel.acceleration.z * accel.acceleration.z)) * 180.0f / PI;
+    float accelRoll = atan2(accel.acceleration.y, accel.acceleration.z) * 180.0f / PI;
+
+    // Simple complementary filter (combine gyro and accel)
+    // For now, just use accelerometer (no gyro integration yet)
+    currentPitch = accelPitch;
+    currentRoll = accelRoll;
+}
+
+/**
+ * @brief Get current pitch angle
+ */
+float getIMUPitch() { return currentPitch; }
+
+/**
+ * @brief Get current roll angle
+ */
+float getIMURoll() { return currentRoll; }
+
+/**
+ * @brief Check if IMU is available
+ */
+bool isIMUAvailable() { return imuAvailable; }
+
+/**
+ * @brief Calibrate IMU by setting current pitch as baseline
+ */
+void calibrateIMU() {
+    if (!imuAvailable) {
+        Serial.println("ERROR: IMU not available for calibration");
+        return;
+    }
+
+    // Take a few readings to stabilize
+    for (int i = 0; i < 5; i++) {
+        updateIMU();
+        delay(50);
+    }
+
+    baselinePitch = currentPitch;
+    imuCalibrated = true;
+
+    Serial.print("IMU calibrated - Baseline pitch: ");
+    Serial.print(baselinePitch, 1);
+    Serial.println("°");
+}
+
+/**
+ * @brief Get tilt error from calibrated baseline
+ * @return Tilt error in degrees (positive = tilting forward)
+ */
+float getTiltError() {
+    if (!imuCalibrated) return 0.0f;
+    return currentPitch - baselinePitch;
+}
+
+/**
+ * @brief Check if IMU is calibrated
+ */
+bool isIMUCalibrated() { return imuCalibrated; }
+
+/**
+ * @brief Check tilt and print warning if threshold exceeded
+ */
+void checkTiltWarning() {
+    #if ENABLE_TILT_CORRECTION
+    if (!imuAvailable || !imuCalibrated) return;
+
+    float tiltError = getTiltError();
+
+    if (fabs(tiltError) > TILT_WARNING_THRESHOLD) {
+        // Rate-limit warnings
+        if (millis() - lastTiltWarning >= tiltWarningInterval) {
+            Serial.print("[TILT WARNING] ");
+            Serial.print(tiltError > 0 ? "Forward" : "Backward");
+            Serial.print(" tilt: ");
+            Serial.print(fabs(tiltError), 1);
+            Serial.println("°");
+            lastTiltWarning = millis();
+        }
+    }
+    #endif
+}
+#endif
 
 // ============================================================================
 // SHIELD DETECTION
@@ -308,11 +462,27 @@ void setup() {
     // Initialize robot (sets up active motors, encoders, PIDs)
     robot.begin();
 
+    // Initialize IMU
+    #if ENABLE_IMU
+    imuAvailable = initIMU();
+
+    // Auto-calibrate IMU baseline if enabled
+    #if AUTO_CALIBRATE_ON_START
+    if (imuAvailable) {
+        Serial.print("Auto-calibrating IMU... ");
+        calibrateIMU();
+    }
+    #endif
+    #endif
+
     Serial.println("✓ Robot ready!\n");
     Serial.print("Active: ");
     if (status.crawler1_available) Serial.print("Crawler 1 ");
     if (status.crawler1_available && status.crawler2_available) Serial.print("+ ");
     if (status.crawler2_available) Serial.print("Crawler 2");
+    #if ENABLE_IMU
+    if (imuAvailable) Serial.print(" + IMU");
+    #endif
     Serial.println("\n");
     Serial.println("Type HELP for available commands\n");
 
@@ -339,6 +509,15 @@ void loop() {
         // Update timing
         lastControlUpdate = currentTime;
     }
+
+    // Update IMU at configured rate
+    #if ENABLE_IMU
+    if (imuAvailable && (millis() - lastImuUpdate >= imuPeriodMs)) {
+        updateIMU();
+        checkTiltWarning();
+        lastImuUpdate = millis();
+    }
+    #endif
 
     // Process serial commands (non-blocking)
     cmdParser.update();

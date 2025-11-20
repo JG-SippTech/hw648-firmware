@@ -3,6 +3,16 @@
 #include <string.h>
 #include <ctype.h>
 
+// External IMU functions (defined in main.cpp)
+#if ENABLE_IMU
+extern bool isIMUAvailable();
+extern float getIMUPitch();
+extern float getIMURoll();
+extern void calibrateIMU();
+extern float getTiltError();
+extern bool isIMUCalibrated();
+#endif
+
 CommandParser::CommandParser(RobotMotion* robot, unsigned long baudRate)
     : m_robot(robot)
     , m_baudRate(baudRate)
@@ -199,6 +209,11 @@ void CommandParser::parseCommand(const char* command) {
         m_robot->resetEncoders();
         Serial.println("OK - Encoders reset");
     }
+    #if ENABLE_IMU
+    else if (strcmp(cmd, "CALIBRATE") == 0) {
+        calibrateIMU();
+    }
+    #endif
     #if ENABLE_NUDGE_COMMAND
     else if (strncmp(cmd, "NUDGE", 5) == 0) {
         // NUDGE command: NUDGE M<id> <+/- counts>
@@ -377,6 +392,30 @@ void CommandParser::printStatus() {
     Serial.print(m_robot->getMaxPositionError(), 0);
     Serial.println(" counts");
 
+    // IMU attitude display
+    #if ENABLE_IMU
+    if (isIMUAvailable()) {
+        Serial.print("IMU - Pitch: ");
+        Serial.print(getIMUPitch(), 1);
+        Serial.print("°");
+
+        // Show tilt error if calibrated
+        if (isIMUCalibrated()) {
+            float tiltErr = getTiltError();
+            Serial.print(" (Tilt: ");
+            if (tiltErr >= 0) Serial.print("+");
+            Serial.print(tiltErr, 1);
+            Serial.print("°)");
+        } else {
+            Serial.print(" (Not calibrated)");
+        }
+
+        Serial.print("  Roll: ");
+        Serial.print(getIMURoll(), 1);
+        Serial.println("°");
+    }
+    #endif
+
     // Active crawler count
     Serial.print("Active Crawlers: ");
     Serial.print(m_robot->getActiveCrawlers());
@@ -412,6 +451,9 @@ void CommandParser::printHelp() {
     #endif
     Serial.println("STATUS              - Print detailed crawler status");
     Serial.println("RESET               - Reset encoder positions");
+    #if ENABLE_IMU
+    Serial.println("CALIBRATE           - Zero IMU tilt baseline");
+    #endif
     Serial.println("HELP                - Show this message");
     Serial.println("==================================\n");
 }

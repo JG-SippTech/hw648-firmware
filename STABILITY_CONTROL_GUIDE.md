@@ -244,7 +244,7 @@ See [Manual Control Tools](#manual-control-tools) section below.
 
 ---
 
-## IMU Integration Guide
+## IMU Integration (Implemented)
 
 ### Why Add an IMU?
 
@@ -256,120 +256,148 @@ An IMU (Inertial Measurement Unit) directly measures **physical tilt**, not infe
 - ✅ Enable active tilt correction (keep crawler level)
 - ✅ Catch slip that encoders miss (wheel spins, robot doesn't move)
 
-### Recommended IMU: WT901 or BNO055
+### Implemented: LSM9DS1 9-DOF IMU
 
-| Specification | WT901 | BNO055 |
-|---------------|-------|--------|
-| Interface | UART, I2C | UART, I2C |
-| Output | Roll, Pitch, Yaw | Quaternion, Euler |
-| Update rate | 200 Hz | 100 Hz |
-| Size | 15mm × 15mm | 20mm × 27mm |
-| Voltage | 3.3V - 5V | 3.3V |
-| Cost | ~$25-35 | ~$20-30 |
+**Current Hardware:**
+- **Sensor:** Adafruit LSM9DS1 breakout board
+- **Interface:** I2C on Wire1 (separate from motor shields)
+- **Connection:** Stemma QT connector with twisted pair
 
-**Recommended:** WT901 (simpler UART output, higher update rate)
+| Pin | Color | Function |
+|-----|-------|----------|
+| 16 | Blue | SDA1 |
+| 17 | Yellow | SCL1 |
+| 3.3V | Red | Power |
+| GND | Black | Ground |
 
-### Wiring
+**Why Wire1 (separate I2C bus)?**
+- Isolates long IMU cable from motor shield communication
+- Motor shields use Wire (pins 18/19) at 100 kHz
+- IMU uses Wire1 (pins 16/17) at 400 kHz
+- Better signal integrity over 4-foot umbilical
 
-**Option 1: UART (Recommended for 4-foot umbilical)**
+### The 3-Wheeled Crawler Challenge for IMU
 
+**Key Insight:** With wheels at 120° apart, there is **no fixed "up" direction**.
+
+The crawler rotates freely within the pipe:
 ```
-WT901 IMU          Teensy 4.0
-──────────         ──────────
-VCC (3.3V)  ───────  3.3V
-GND         ───────  GND
-TX          ───────  Pin 15 (Serial3 RX)
-RX          ───────  Pin 14 (Serial3 TX)
-```
+        Configuration A           Configuration B
+         (Wheel 1 up)              (Wheel 2 up)
 
-**Umbilical wires:**
-- Add one twisted pair for TX/RX (2 wires total)
-- UART easily handles 4 feet at 115200 baud
-- No special drivers needed
-
-**Option 2: I2C with Extender (If using I2C IMU)**
-
-```
-PCA9615 Extender   4-foot Twisted Pair   PCA9615 Extender
-(Teensy Side)                             (Crawler Side)
-────────────       ──────────────         ────────────
-SDA  ──────────────  SDA+ / SDA-  ────────  SDA ── IMU
-SCL  ──────────────  SCL+ / SCL-  ────────  SCL ── IMU
+           ● M1                        ● M2
+          ╱ ╲                          ╱ ╲
+         ●   ●                        ●   ●
+        M2   M3                      M3   M1
 ```
 
-- PCA9615 converts I2C to differential signaling
-- Can go 50+ feet reliably
-- Costs ~$5-10 per extender (need 2)
+**What we care about:** Pitch along the pipe axis (forward/backward tilt)
 
-### Firmware Integration
+**What we don't care about:** Roll around the pipe axis (which wheel is "up")
 
-**Step 1: Add IMU reading (main.cpp)**
+### Calibration-Based Tilt Detection
+
+**The Solution:** Calibrate at startup to establish "level" baseline
+
+**How it works:**
+1. On startup, IMU measures current pitch angle
+2. This is stored as `baselinePitch` (the "zero" reference)
+3. During operation, deviation from baseline = tilt error
+4. Positive tilt = tilting forward, Negative = tilting backward
+
+**Why this works for 3-wheeled design:**
+- No need to know absolute orientation
+- Only need to detect **change** from calibrated position
+- Works regardless of which wheel is "up" in the pipe
+
+### Current Implementation (Warning Mode)
+
+**Configuration (config.h):**
+```cpp
+#define ENABLE_IMU              true
+#define IMU_WIRE                Wire1
+#define IMU_UPDATE_HZ           20
+
+// Tilt correction
+#define ENABLE_TILT_CORRECTION  true
+#define AUTO_CALIBRATE_ON_START true
+#define TILT_WARNING_THRESHOLD  2.0f    // Degrees from baseline
+```
+
+**Startup Sequence:**
+```
+Initializing IMU on Wire1... OK
+Auto-calibrating IMU... IMU calibrated - Baseline pitch: -24.3°
+✓ Robot ready!
+
+Active: Crawler 1 + Crawler 2 + IMU
+```
+
+**STATUS Output:**
+```
+Sync - Avg Pos: 0  Max Error: 0 counts
+IMU - Pitch: -24.2° (Tilt: +0.1°)  Roll: 98.3°
+Active Crawlers: 2/2
+```
+
+**Tilt Warnings:**
+```
+[TILT WARNING] Forward tilt: 3.2°
+[TILT WARNING] Backward tilt: 2.5°
+```
+
+Warnings print every 2 seconds (rate-limited) when tilt exceeds threshold.
+
+### Serial Commands
+
+| Command | Description |
+|---------|-------------|
+| `CALIBRATE` | Re-zero IMU tilt baseline |
+| `STATUS` | Shows pitch, tilt error, and roll |
+
+**Usage:**
+```
+CALIBRATE
+IMU calibrated - Baseline pitch: -24.5°
+
+STATUS
+IMU - Pitch: -22.1° (Tilt: +2.4°)  Roll: 98.3°
+```
+
+### Future: Active Tilt Correction
+
+**Goal:** Automatically correct tilt by adjusting motor speeds
+
+**The Challenge:** Which motor to correct?
+
+**The Solution:** Combine IMU tilt with position sync data:
+- IMU tells us **that** we're tilting
+- Position errors tell us **which motor** is ahead/behind
 
 ```cpp
-#include <HardwareSerial.h>
+// Future implementation concept
+tiltCorrection = (currentPitch - baselinePitch) * TILT_CORRECTION_GAIN
 
-// IMU on Serial3 (pins 14, 15)
-HardwareSerial& imuSerial = Serial3;
+For each motor:
+    positionError = motorPosition - averagePosition
 
-float currentPitch = 0.0f;
-float currentRoll = 0.0f;
-
-void setup() {
-    // ... existing setup ...
-
-    // Initialize IMU serial
-    imuSerial.begin(115200);
-}
-
-void loop() {
-    // ... existing control loop ...
-
-    // Read IMU data
-    if (imuSerial.available() >= 11) {  // WT901 packet size
-        readIMU(currentPitch, currentRoll);
-    }
-
-    // Apply attitude corrections
-    robot.applyAttitudeCorrection(currentPitch, currentRoll);
-}
+    if (tiltCorrection > 0 AND positionError > 0):
+        // This motor is ahead AND we're tipping forward
+        // Slow this motor more aggressively
+        extraCorrection = tiltCorrection * positionError * TILT_GAIN
 ```
 
-**Step 2: Add attitude correction (RobotMotion.cpp)**
+**Why this works:**
+- Tilt sensor catches the problem early
+- Position sync identifies the cause
+- Combined correction is more aggressive and targeted
 
-```cpp
-void RobotMotion::applyAttitudeCorrection(float pitch, float roll) {
-    // If pitched forward (positive pitch), leading motor is ahead
-    // Apply negative correction to leading motor
-
-    float pitchCorrection = -pitch * ATTITUDE_KP;  // e.g., Kp = 50
-
-    // Project pitch onto each motor's position (120° apart)
-    float correction1 = pitchCorrection * cos(0° * DEG_TO_RAD);      // Front
-    float correction2 = pitchCorrection * cos(120° * DEG_TO_RAD);    // Left
-    float correction3 = pitchCorrection * cos(240° * DEG_TO_RAD);    // Right
-
-    // Add to existing position sync corrections
-    // (This becomes the outer-most control loop)
-}
-```
-
-**Step 3: Add config parameters (config.h)**
-
-```cpp
-// IMU Attitude Control
-#define ENABLE_ATTITUDE_CONTROL  true
-#define ATTITUDE_KP             50.0f   // Velocity correction per degree tilt
-#define MAX_ATTITUDE_CORRECTION 500.0f  // Max correction (c/s)
-#define PITCH_WARNING_THRESHOLD 5.0f    // Warn if pitch > 5°
-#define PITCH_STOP_THRESHOLD    15.0f   // Emergency stop if > 15°
-```
-
-### Control Loop with IMU (Future)
+### Control Loop with IMU
 
 ```
 User Command → Speed Ramp → Base Velocity
                                ↓
-    IMU Attitude Sensor → Attitude Correction (outer loop)
+    IMU Tilt Sensor → Tilt Warning/Correction (outer loop)
                                ↓
            Position Sync → Position Correction (middle loop)
                                ↓
@@ -378,10 +406,11 @@ User Command → Speed Ramp → Base Velocity
                           Motor PWM
 ```
 
-**Three-level cascade:**
-1. **Attitude control** (slowest, 1-2 Hz): Keep crawler level
-2. **Position sync** (medium, 10-20 Hz): Keep motors aligned
-3. **Velocity PID** (fastest, 50 Hz): Track velocity setpoints
+**Current status:**
+- ✅ IMU reading (20 Hz)
+- ✅ Baseline calibration
+- ✅ Tilt warning display
+- ⏳ Active tilt correction (future enhancement)
 
 ---
 
@@ -393,41 +422,40 @@ User Command → Speed Ramp → Base Velocity
 
 **Purpose:** Manual control of individual motors for realignment
 
-**Key Mapping (Two-Key Design):**
+**Design:** Single-crawler control to avoid keyboard ghosting issues
+
+**Key Mapping:**
 
 ```
 Motor 1:  Q = Forward    A = Backward
 Motor 2:  W = Forward    S = Backward
 Motor 3:  E = Forward    D = Backward
-Motor 4:  R = Forward    F = Backward
-Motor 5:  T = Forward    G = Backward
-Motor 6:  Y = Forward    H = Backward
 
 ESC = Emergency Stop All Motors
 ```
 
-**Why two-key design?**
-- Avoids Windows keyboard ghosting (6+ simultaneous keys)
-- Standard keyboards support 2-6 keys, not 6+ simultaneously
-- More intuitive than memorizing complex key combos
+**Why single-crawler design?**
+- Avoids Windows keyboard ghosting (standard keyboards support 2-6 simultaneous keys max)
+- Only 3 motors to control = 6 keys maximum = reliable operation
+- Select which crawler at launch time
 
 **Usage:**
 
 ```bash
-# From hw648-firmware/ directory
-python tools/manual_control.py
+# Control Crawler 1 (motors 1-3)
+python tools/manual_control.py COM8 1
 
-# Follow prompts:
-# 1. Enter COM port (e.g., COM7)
-# 2. Press keys to control motors
-# 3. ESC to exit
+# Control Crawler 2 (motors 4-6)
+python tools/manual_control.py COM8 2
 ```
 
+**Note:** Close PlatformIO serial monitor before running - only one program can use the COM port.
+
 **Features:**
-- Real-time status display
-- Shows which motors are running
-- Displays current encoder positions
+- Real-time status display with motor directions
+- Shows which motors are active
 - Emergency stop on ESC key
+- Works with IMU display in firmware
 
 ### NUDGE Command (Built into Firmware)
 
@@ -630,17 +658,19 @@ RESET           # Reset encoder positions
 
 ## Summary
 
-### Current System (Implemented)
+### Current System (Implemented - November 2025)
 - ✅ Position synchronization (keeps motors aligned)
 - ✅ PID velocity control (tracks speed setpoints)
 - ✅ Slip detection (warns of traction loss)
 - ✅ NUDGE command (precise manual positioning)
 - ✅ Manual control tools (Python keyboard controller)
 - ✅ Enhanced drift detection (earlier warnings)
+- ✅ **IMU integration (LSM9DS1 on Wire1)**
+- ✅ **Tilt calibration and warning system**
+- ✅ **CALIBRATE command for re-zeroing baseline**
 
 ### Future Enhancements
-- ⏳ IMU integration (direct tilt measurement)
-- ⏳ Attitude control loop (active leveling)
+- ⏳ Active tilt correction (automatic motor speed adjustment based on IMU + position)
 - ⏳ Predictive slip compensation
 - ⏳ Automated realignment procedures
 
@@ -648,10 +678,23 @@ RESET           # Reset encoder positions
 
 **The stability problem is solvable through:**
 1. **Better sensing** - Detect slip and tilt earlier (slip detection + IMU)
-2. **Faster correction** - React before tipping point (aggressive sync + attitude control)
-3. **Manual tools** - Easily recover from drift (NUDGE command + keyboard control)
+2. **Calibration** - Zero the tilt baseline to detect changes regardless of pipe orientation
+3. **Faster correction** - React before tipping point (aggressive sync + future attitude control)
+4. **Manual tools** - Easily recover from drift (NUDGE command + keyboard control)
 
 With these tools, you can maintain stability and quickly recover when issues occur.
+
+### The 3-Wheeled Crawler Solution
+
+The key insight for 3-wheeled pipe crawlers with no fixed "up" direction:
+
+**Don't try to measure absolute orientation - measure change from calibrated baseline.**
+
+This approach:
+- Works regardless of which wheel is at top of pipe
+- Only requires detecting tilt deviation, not absolute angle
+- Combines IMU tilt data with position sync to identify which motor to correct
+- Scales from simple warnings to full active correction as needed
 
 ---
 
